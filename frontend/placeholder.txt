@@ -1,1 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FaceGuard AI</title>
+<style>
+  body { font-family: Arial, sans-serif; text-align: center; padding: 30px; background: #f5f5f5; }
+  input, button { padding: 10px; margin: 10px; }
+  #results { margin-top: 20px; text-align: left; display: inline-block; background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+  .issue { color: #e74c3c; font-weight: bold; }
+  .recommendation { color: #27ae60; }
+  .section { margin-top: 15px; }
+</style>
+</head>
+<body>
+
+<h1>FaceGuard AI</h1>
+<p>Upload a selfie (front-facing) and press Scan.</p>
+
+<input type="file" id="selfie" accept="image/*">
+<button onclick="scanFace()">Scan Face</button>
+
+<div id="loading" style="display:none;">Scanning...</div>
+
+<div id="results" style="display:none;">
+  <h2>Analysis Result</h2>
+  
+  <div id="skinType" class="section"></div>
+  <div id="issues" class="section"></div>
+  <div id="products" class="section"></div>
+  <div id="diet" class="section"></div>
+  <div id="lifestyle" class="section"></div>
+  <div id="tracking" class="section"></div>
+</div>
+
+<script>
+async function scanFace() {
+  const fileInput = document.getElementById('selfie');
+  if(!fileInput.files.length){
+    alert('Please upload a selfie first!');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('photo', fileInput.files[0]);
+
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('results').innerHTML = '';
+
+  try {
+    const response = await fetch('https://faceguardai-7oxq.onrender.com/scan', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('results').style.display = 'block';
+
+    // Example skin type (AI can return actual type)
+    const skinTypeDiv = document.getElementById('skinType');
+    skinTypeDiv.innerHTML = `<h3>Skin Type: ${data.skinType || 'Combination'}</h3>`;
+
+    // Display detected issues
+    const issuesDiv = document.getElementById('issues');
+    issuesDiv.innerHTML = '<h3>Detected Issues:</h3>';
+    data.analysis.issues.forEach(issue => {
+      const p = document.createElement('p');
+      p.className = 'issue';
+      p.textContent = '• ' + issue;
+      issuesDiv.appendChild(p);
+    });
+
+    // Display product suggestions
+    const productsDiv = document.getElementById('products');
+    productsDiv.innerHTML = '<h3>Product Suggestions:</h3>';
+    data.analysis.issues.forEach(issue => {
+      const p = document.createElement('p');
+      p.className = 'recommendation';
+      if(issue.includes('Texture')) p.textContent = 'Gentle exfoliation + hydrating serum';
+      else if(issue.includes('High brightness')) p.textContent = 'Oil-control moisturizer';
+      else p.textContent = 'Cleanser + sunscreen daily';
+      productsDiv.appendChild(p);
+    });
+
+    // Diet & vitamins
+    const dietDiv = document.getElementById('diet');
+    dietDiv.innerHTML = '<h3>Diet & Vitamins:</h3><p>Vitamin C, Zinc, Omega-3, Hydrating foods (fruits & vegetables)</p>';
+
+    // Lifestyle
+    const lifestyleDiv = document.getElementById('lifestyle');
+    lifestyleDiv.innerHTML = '<h3>Lifestyle Tips:</h3><p>Sleep 7-8 hours, stay hydrated, limit screen time, sun protection</p>';
+
+    // Weekly tracking placeholder
+    const trackingDiv = document.getElementById('tracking');
+    trackingDiv.innerHTML = '<h3>Weekly Tracking:</h3><p>Track acne severity, oiliness, and texture consistency each week</p>';
+
+  } catch(err){
+    document.getElementById('loading').style.display = 'none';
+    alert('Error scanning face: ' + err.message);
+  }
+}
+</script>
+
+</body>
+</html>
 
