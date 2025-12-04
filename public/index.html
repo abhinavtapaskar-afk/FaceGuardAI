@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FaceGuard AI</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 30px; max-width: 720px; margin:auto; }
+    h1 { color:#0b5; }
+    #result { white-space: pre-wrap; margin-top:20px; background:#f7f7f7; padding:12px; border-radius:8px; }
+  </style>
+</head>
+<body>
+  <h1>FaceGuard AI</h1>
+  <p>Upload a selfie (front-facing) and press Scan.</p>
+
+  <input id="fileInput" type="file" accept="image/*" />
+  <button id="scanBtn">Scan Face</button>
+
+  <div id="loading" style="display:none">Scanning… please wait.</div>
+
+  <h3>Analysis</h3>
+  <div id="result">No scan yet.</div>
+
+  <script>
+    const input = document.getElementById('fileInput');
+    const btn = document.getElementById('scanBtn');
+    const loading = document.getElementById('loading');
+    const result = document.getElementById('result');
+
+    btn.addEventListener('click', async () => {
+      const file = input.files[0];
+      if (!file) { alert('Please choose a selfie first.'); return; }
+      loading.style.display = 'block';
+      result.textContent = '';
+      const form = new FormData();
+      form.append('photo', file);
+
+      try {
+        const resp = await fetch('/upload', { method: 'POST', body: form });
+        const data = await resp.json();
+        loading.style.display = 'none';
+        if (!resp.ok) {
+          result.textContent = 'Error: ' + (data.error || resp.statusText);
+          return;
+        }
+        // display analysis
+        result.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        loading.style.display = 'none';
+        result.textContent = 'Network error: ' + err.message;
+      }
+    });
+  </script>
+</body>
+</html>
