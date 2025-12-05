@@ -1,87 +1,87 @@
-const express = require("express");
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
+require('dotenv').config({ path: './config.env' });
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Ensure uploads folder exists
-const UPLOAD_DIR = path.join(__dirname, "uploads");
+// Ensure required directories exist
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
-// Serve static frontend
-app.use(express.static("public"));
+// Middleware
+app.use(cors({
+  origin: process.env.FRONTEND_URL || '*',
+  credentials: true
+}));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Multer setup (save files to uploads folder)
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || ".jpg";
-    cb(null, `photo-${Date.now()}${ext}`);
-  }
-});
-const upload = multer({ storage });
+// Serve static files
+app.use(express.static('public'));
+app.use('/uploads', express.static(UPLOAD_DIR));
 
-// HEALTH / ROOT
-app.get("/", (req, res) => {
-  res.send("FaceGuard AI is running 🚀");
-});
+// Import routes
+const authRoutes = require('./backend/routes/auth');
+const scanRoutes = require('./backend/routes/scan');
+const userRoutes = require('./backend/routes/user');
+const progressRoutes = require('./backend/routes/progress');
 
-// Upload endpoint
-app.post("/upload", upload.single("photo"), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+// API Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/scan', scanRoutes);
+app.use('/api/user', userRoutes);
+app.use('/api/progress', progressRoutes);
 
-    const savedPath = req.file.path; // local file path
-    // Placeholder analysis - replace with AI call later
-    const analysis = await simpleAnalyze(savedPath);
-
-    // Optionally: delete file after analyze if you don't need to store it
-    // fs.unlinkSync(savedPath);
-
-    return res.json({ ok: true, file: req.file.filename, analysis });
-  } catch (err) {
-    console.error("Upload error:", err);
-    return res.status(500).json({ error: err.message || "Server error" });
-  }
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: 'FaceGuard AI Server is running',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// A simple placeholder analysis function that inspects image brightness / variance etc.
-// Keeps your app working now. Replace with real vision model later.
-const Jimp = require("jimp"); // we will add to package.json, Jimp is pure-js image lib
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    name: 'FaceGuard AI API',
+    version: '1.0.0',
+    status: 'active',
+    endpoints: {
+      auth: '/api/auth',
+      scan: '/api/scan',
+      user: '/api/user',
+      progress: '/api/progress'
+    }
+  });
+});
 
-async function simpleAnalyze(imagePath) {
-  try {
-    const img = await Jimp.read(imagePath);
-    img.resize(256, 256); // small for speed
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(err.status || 500).json({
+    error: true,
+    message: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});
 
-    // compute average brightness and variance as naive metrics
-    let sum = 0, sumSq = 0, count = 0;
-    img.scan(0, 0, img.bitmap.width, img.bitmap.height, function (x, y, idx) {
-      const r = this.bitmap.data[idx + 0];
-      const g = this.bitmap.data[idx + 1];
-      const b = this.bitmap.data[idx + 2];
-      const lum = 0.2126*r + 0.7152*g + 0.0722*b;
-      sum += lum; sumSq += lum*lum; count++;
-    });
-    const mean = sum / count;
-    const variance = sumSq / count - mean*mean;
-
-    // naive rules
-    const issues = [];
-    if (mean < 70) issues.push("Dull skin / low brightness");
-    if (variance > 1500) issues.push("Texture/roughness likely");
-    if (mean > 170) issues.push("High brightness (possible oily shine)");
-    // other dummy rules
-    if (issues.length === 0) issues.push("No strong issues detected — needs AI for deeper analysis");
-
-    return { meanLum: Math.round(mean), variance: Math.round(variance), issues };
-  } catch (e) {
-    console.error("simpleAnalyze error:", e);
-    return { error: "analysis failed", details: e.message };
-  }
-}
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    error: true,
+    message: 'Route not found'
+  });
+});
 
 // Start server
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 FaceGuard AI Server running on port ${PORT}`);
+  console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+});
+
+module.exports = app;
