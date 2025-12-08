@@ -9,6 +9,7 @@ const SignupPage = () => {
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();
   const [loading, setLoading] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -38,13 +39,33 @@ const SignupPage = () => {
       return;
     }
 
+    // Check consent checkbox
+    if (!agreedToTerms) {
+      toast.error('Please agree to the Privacy Policy and Terms of Use');
+      return;
+    }
+
     setLoading(true);
     try {
+      // Get user's IP address (optional - for consent tracking)
+      let userIP = null;
+      try {
+        const ipResponse = await fetch('https://api.ipify.org?format=json');
+        const ipData = await ipResponse.json();
+        userIP = ipData.ip;
+      } catch (error) {
+        console.log('Could not fetch IP:', error);
+      }
+
       const response = await authAPI.signup({
         name: formData.name,
         email: formData.email,
         password: formData.password,
+        consent_accepted: true,
+        consent_timestamp: new Date().toISOString(),
+        consent_ip_address: userIP,
       });
+      
       setAuth(response.data.user, response.data.token);
       toast.success('Account created successfully!');
       navigate('/dashboard');
@@ -157,10 +178,57 @@ const SignupPage = () => {
               </div>
             </div>
 
+            {/* Consent Checkbox - REQUIRED */}
+            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+              <label className="flex items-start space-x-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agreedToTerms}
+                  onChange={(e) => setAgreedToTerms(e.target.checked)}
+                  className="mt-1 w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                  required
+                />
+                <span className="text-sm text-gray-700">
+                  I agree to the{' '}
+                  <Link
+                    to="/privacy"
+                    target="_blank"
+                    className="text-primary-600 hover:text-primary-700 font-medium underline"
+                  >
+                    Privacy Policy
+                  </Link>
+                  {', '}
+                  <Link
+                    to="/terms"
+                    target="_blank"
+                    className="text-primary-600 hover:text-primary-700 font-medium underline"
+                  >
+                    Terms of Use
+                  </Link>
+                  {', '}
+                  <Link
+                    to="/medical-disclaimer"
+                    target="_blank"
+                    className="text-primary-600 hover:text-primary-700 font-medium underline"
+                  >
+                    Medical Disclaimer
+                  </Link>
+                  {', and '}
+                  <Link
+                    to="/affiliate-disclaimer"
+                    target="_blank"
+                    className="text-primary-600 hover:text-primary-700 font-medium underline"
+                  >
+                    Affiliate Disclaimer
+                  </Link>
+                </span>
+              </label>
+            </div>
+
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !agreedToTerms}
               className="btn-primary w-full flex items-center justify-center space-x-2"
             >
               {loading ? (
