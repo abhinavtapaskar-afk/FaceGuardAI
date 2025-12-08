@@ -12,6 +12,12 @@ import ResultsPage from './pages/ResultsPage';
 import ProgressPage from './pages/ProgressPage';
 import ProfilePage from './pages/ProfilePage';
 
+// Legal Pages
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import TermsOfUsePage from './pages/TermsOfUsePage';
+import MedicalDisclaimerPage from './pages/MedicalDisclaimerPage';
+import AffiliateDisclaimerPage from './pages/AffiliateDisclaimerPage';
+
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
@@ -71,6 +77,12 @@ function App() {
             </PublicRoute>
           }
         />
+
+        {/* Legal Pages - Public Access */}
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/terms" element={<TermsOfUsePage />} />
+        <Route path="/medical-disclaimer" element={<MedicalDisclaimerPage />} />
+        <Route path="/affiliate-disclaimer" element={<AffiliateDisclaimerPage />} />
 
         {/* Protected Routes */}
         <Route
