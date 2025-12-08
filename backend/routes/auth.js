@@ -17,13 +17,28 @@ const generateToken = (userId, email) => {
 // POST /api/auth/signup
 router.post('/signup', async (req, res) => {
   try {
-    const { email, password, name } = req.body;
+    const { 
+      email, 
+      password, 
+      name, 
+      consent_accepted, 
+      consent_timestamp, 
+      consent_ip_address 
+    } = req.body;
 
     // Validation
     if (!email || !password || !name) {
       return res.status(400).json({
         error: true,
         message: 'Please provide email, password, and name'
+      });
+    }
+
+    // Consent validation (REQUIRED)
+    if (!consent_accepted) {
+      return res.status(400).json({
+        error: true,
+        message: 'You must agree to the Privacy Policy and Terms of Use'
       });
     }
 
@@ -57,8 +72,17 @@ router.post('/signup', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // Create user
-    const user = await db.createUser(email, passwordHash, name);
+    // Create user with consent data
+    const userData = {
+      email,
+      password_hash: passwordHash,
+      name,
+      consent_accepted: true,
+      consent_timestamp: consent_timestamp || new Date().toISOString(),
+      consent_ip_address: consent_ip_address || req.ip || req.connection.remoteAddress,
+    };
+
+    const user = await db.createUser(userData);
 
     // Generate token
     const token = generateToken(user.id, user.email);
@@ -70,7 +94,8 @@ router.post('/signup', async (req, res) => {
         user: {
           id: user.id,
           email: user.email,
-          name: user.name
+          name: user.name,
+          consent_accepted: user.consent_accepted
         },
         token
       }
@@ -115,6 +140,9 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    // Update last login
+    await db.updateUserLastLogin(user.id);
+
     // Generate token
     const token = generateToken(user.id, user.email);
 
@@ -125,7 +153,12 @@ router.post('/login', async (req, res) => {
         user: {
           id: user.id,
           email: user.email,
-          name: user.name
+          name: user.name,
+          glow_score: user.glow_score || 0,
+          streak_count: user.streak_count || 0,
+          total_scans: user.total_scans || 0,
+          is_premium: user.is_premium || false,
+          created_at: user.created_at
         },
         token
       }
