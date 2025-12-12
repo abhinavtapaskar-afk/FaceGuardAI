@@ -19,13 +19,13 @@ if (process.env.RAZORPAY_ENABLED === 'true' && process.env.RAZORPAY_KEY_ID && pr
 const PLANS = {
   monthly: {
     name: 'Premium Monthly',
-    amount: 19900, // ₹199 in paise
+    amount: 9900, // ₹99 in paise
     currency: 'INR',
     duration_days: 30,
   },
   yearly: {
     name: 'Premium Yearly',
-    amount: 199900, // ₹1,999 in paise
+    amount: 99900, // ₹999 in paise
     currency: 'INR',
     duration_days: 365,
   },
