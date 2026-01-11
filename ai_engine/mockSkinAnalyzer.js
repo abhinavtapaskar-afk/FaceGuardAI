@@ -37,3 +37,4 @@ function mockAnalyzeSkin(imagePath) {
 
 module.exports = { analyzeSkin: mockAnalyzeSkin };
 
+
