@@ -1,11 +1,21 @@
 const OpenAI = require('openai');
 const fs = require('fs');
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// Check if we should use mock mode (no API key or TEST_MODE enabled)
+const useMockMode = process.env.MOCK_MODE === 'true' || !process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here';
 
-// Static system message for prompt caching (reduces costs by ~50%)
+if (useMockMode) {
+  console.log('🔧 MOCK MODE: Using mock skin analyzer (no OpenAI API key required)');
+  // Use mock implementation
+  const mockAnalyzer = require('./mockSkinAnalyzer');
+  module.exports = mockAnalyzer;
+} else {
+  // Use real OpenAI implementation
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+  });
+
+  // Static system message for prompt caching (reduces costs by ~50%)
 const SYSTEM_MESSAGE = `You are an expert dermatologist AI. Analyze facial selfies and provide detailed skin analysis.
 
 IMPORTANT: Respond ONLY with valid JSON. No markdown, no code blocks, no explanations outside the JSON.
@@ -35,8 +45,8 @@ Detect these issue categories:
 
 Be thorough but realistic. Only include issues you can clearly detect.`;
 
-// Regex-based JSON extraction fallback
-function extractJSON(text) {
+  // Regex-based JSON extraction fallback
+  function extractJSON(text) {
   // First, try to find JSON object boundaries
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
@@ -84,8 +94,8 @@ function extractJSON(text) {
   throw new Error('No JSON object found in response');
 }
 
-// Analyze skin using OpenAI Vision
-async function analyzeSkin(imagePath) {
+  // Analyze skin using OpenAI Vision
+  async function analyzeSkin(imagePath) {
   try {
     // Read image and convert to base64
     const imageBuffer = fs.readFileSync(imagePath);
@@ -138,4 +148,5 @@ async function analyzeSkin(imagePath) {
   }
 }
 
-module.exports = { analyzeSkin };
+  module.exports = { analyzeSkin };
+}

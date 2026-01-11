@@ -12,6 +12,8 @@ const REQUIRED_ENV_VARS = [
 // Validate all required environment variables
 function validateEnv() {
   const missing = [];
+  const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+  const testMode = process.env.TEST_MODE === 'true' || process.env.ALLOW_MISSING_KEYS === 'true';
   
   REQUIRED_ENV_VARS.forEach(varName => {
     if (!process.env[varName]) {
@@ -19,17 +21,31 @@ function validateEnv() {
     }
   });
   
+  // In development/test mode, allow missing API keys but warn
   if (missing.length > 0) {
-    logger.error('Missing required environment variables:', missing);
-    console.error('\n❌ CRITICAL ERROR: Missing required environment variables:');
-    missing.forEach(varName => {
-      console.error(`   - ${varName}`);
-    });
-    console.error('\nPlease check your config.env file.\n');
-    throw new Error(
-      `Missing required environment variables: ${missing.join(', ')}\n` +
-      'Please check your config.env file.'
-    );
+    if (testMode || isDevelopment) {
+      console.warn('\n⚠️  WARNING: Some environment variables are missing:');
+      missing.forEach(varName => {
+        console.warn(`   - ${varName}`);
+      });
+      console.warn('\n📝 Running in TEST/MOCK mode - API calls will be mocked.');
+      console.warn('   Set TEST_MODE=true in config.env to suppress this warning.\n');
+      
+      // Set flag for mock mode
+      process.env.MOCK_MODE = 'true';
+    } else {
+      // Production mode - fail fast
+      logger.error('Missing required environment variables:', missing);
+      console.error('\n❌ CRITICAL ERROR: Missing required environment variables:');
+      missing.forEach(varName => {
+        console.error(`   - ${varName}`);
+      });
+      console.error('\nPlease check your config.env file.\n');
+      throw new Error(
+        `Missing required environment variables: ${missing.join(', ')}\n` +
+        'Please check your config.env file.'
+      );
+    }
   }
   
   // Validate JWT_SECRET strength

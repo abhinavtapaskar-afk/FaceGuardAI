@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { db } = require('../config/database');
 const { validateSignup, validateLogin } = require('../middleware/validation');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { createAccountLimiter } = require('../middleware/rateLimiter');
 const logger = require('../utils/logger');
 
 const router = express.Router();
