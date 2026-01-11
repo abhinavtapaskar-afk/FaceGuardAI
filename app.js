@@ -3,25 +3,74 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const morgan = require('morgan');
+
+// Import security middleware
+const { 
+  securityHeaders, 
+  sanitizeData, 
+  preventXSS, 
+  preventHPP,
+  corsOptions,
+  sanitizeRequest,
+  logSecurityEvents
+} = require('./backend/middleware/security');
+
+// Import rate limiters
+const { 
+  generalLimiter, 
+  authLimiter, 
+  scanLimiter,
+  createAccountLimiter 
+} = require('./backend/middleware/rateLimiter');
+
+// Import error handler
+const { errorHandler, notFound } = require('./backend/middleware/errorHandler');
+const logger = require('./backend/utils/logger');
+
+// Validate environment variables (FAIL FAST if missing)
+try {
+  require('./backend/config/validateEnv')();
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Ensure required directories exist
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// Middleware
-app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
-  credentials: true
-}));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Security middleware (APPLY FIRST - Critical for production)
+app.use(securityHeaders);
+app.use(sanitizeData);
+app.use(preventXSS);
+app.use(preventHPP);
+app.use(sanitizeRequest);
+app.use(logSecurityEvents);
+
+// CORS with proper configuration (from security.js)
+app.use(cors(corsOptions));
+
+// Body parsing with size limits
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Request logging
+if (process.env.NODE_ENV !== 'production') {
+  app.use(morgan('dev'));
+} else {
+  app.use(morgan('combined', { stream: logger.stream }));
+}
 
 // Serve static files
 app.use(express.static('public'));
 app.use('/uploads', express.static(UPLOAD_DIR));
+
+// Apply general rate limiter to all API routes
+app.use('/api', generalLimiter);
 
 // Import routes
 const authRoutes = require('./backend/routes/auth');
@@ -29,9 +78,10 @@ const scanRoutes = require('./backend/routes/scan');
 const userRoutes = require('./backend/routes/user');
 const progressRoutes = require('./backend/routes/progress');
 
-// API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/scan', scanRoutes);
+// API Routes with specific rate limiters
+// Note: authLimiter already limits auth routes, createAccountLimiter is applied in auth.js
+app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/scan', scanLimiter, scanRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/progress', progressRoutes);
 
@@ -59,26 +109,17 @@ app.get('/', (req, res) => {
   });
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(err.status || 500).json({
-    error: true,
-    message: err.message || 'Internal server error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-  });
-});
+// 404 handler (before error handler)
+app.use(notFound);
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    error: true,
-    message: 'Route not found'
-  });
-});
+// Error handling middleware (MUST BE LAST)
+app.use(errorHandler);
 
 // Start server
 app.listen(PORT, () => {
+  logger.info(`🚀 FaceGuard AI Server running on port ${PORT}`);
+  logger.info(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  logger.info(`🔗 Health check: http://localhost:${PORT}/health`);
   console.log(`🚀 FaceGuard AI Server running on port ${PORT}`);
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);

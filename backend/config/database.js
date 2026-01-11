@@ -10,10 +10,15 @@ const supabase = createClient(
 // Database helper functions
 const db = {
   // Users
-  async createUser(email, passwordHash, name) {
+  async createUser(email, passwordHash, name, additionalData = {}) {
     const { data, error } = await supabase
       .from('users')
-      .insert([{ email, password_hash: passwordHash, name }])
+      .insert([{ 
+        email, 
+        password_hash: passwordHash, 
+        name,
+        ...additionalData
+      }])
       .select()
       .single();
     
