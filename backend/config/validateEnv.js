@@ -14,8 +14,12 @@ function validateEnv() {
   const missing = [];
   const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
   const testMode = process.env.TEST_MODE === 'true' || process.env.ALLOW_MISSING_KEYS === 'true';
+  const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
   
-  REQUIRED_ENV_VARS.forEach(varName => {
+  // In Vercel, JWT_SECRET is the only critical one
+  const criticalVars = isVercel ? ['JWT_SECRET'] : REQUIRED_ENV_VARS;
+  
+  criticalVars.forEach(varName => {
     if (!process.env[varName]) {
       missing.push(varName);
     }
@@ -33,6 +37,13 @@ function validateEnv() {
       
       // Set flag for mock mode
       process.env.MOCK_MODE = 'true';
+    } else if (isVercel) {
+      // Vercel production - only JWT_SECRET is critical
+      if (missing.includes('JWT_SECRET')) {
+        logger.error('Missing JWT_SECRET in Vercel environment');
+        console.error('\n❌ CRITICAL ERROR: JWT_SECRET is required in Vercel environment variables.\n');
+        throw new Error('JWT_SECRET is required. Please add it in Vercel dashboard → Settings → Environment Variables.');
+      }
     } else {
       // Production mode - fail fast
       logger.error('Missing required environment variables:', missing);

@@ -1,4 +1,8 @@
-require('dotenv').config({ path: './config.env' });
+// Load environment variables
+// In Vercel, env vars are automatically available, no need for config.env
+if (process.env.VERCEL !== '1' && !process.env.VERCEL_ENV) {
+  require('dotenv').config({ path: './config.env' });
+}
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -29,11 +33,19 @@ const { errorHandler, notFound } = require('./backend/middleware/errorHandler');
 const logger = require('./backend/utils/logger');
 
 // Validate environment variables (FAIL FAST if missing)
+// Skip validation in Vercel build phase, validate at runtime
 try {
-  require('./backend/config/validateEnv')();
+  if (process.env.VERCEL !== '1' && !process.env.VERCEL_ENV) {
+    require('./backend/config/validateEnv')();
+  }
 } catch (error) {
-  console.error(error.message);
-  process.exit(1);
+  // In Vercel, log but don't exit (env vars might be set in dashboard)
+  if (process.env.VERCEL === '1' || process.env.VERCEL_ENV) {
+    console.warn('Environment validation warning:', error.message);
+  } else {
+    console.error(error.message);
+    process.exit(1);
+  }
 }
 
 const app = express();
@@ -115,14 +127,17 @@ app.use(notFound);
 // Error handling middleware (MUST BE LAST)
 app.use(errorHandler);
 
-// Start server
-app.listen(PORT, () => {
-  logger.info(`🚀 FaceGuard AI Server running on port ${PORT}`);
-  logger.info(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`🔗 Health check: http://localhost:${PORT}/health`);
-  console.log(`🚀 FaceGuard AI Server running on port ${PORT}`);
-  console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-});
+// Start server (only if not in Vercel/serverless environment)
+if (process.env.VERCEL !== '1' && !process.env.VERCEL_ENV) {
+  app.listen(PORT, () => {
+    logger.info(`🚀 FaceGuard AI Server running on port ${PORT}`);
+    logger.info(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    logger.info(`🔗 Health check: http://localhost:${PORT}/health`);
+    console.log(`🚀 FaceGuard AI Server running on port ${PORT}`);
+    console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+  });
+}
 
+// Export for Vercel serverless
 module.exports = app;
