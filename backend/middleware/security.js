@@ -1,9 +1,22 @@
 const helmet = require('helmet');
-const mongoSanitize = require('express-mongo-sanitize');
+// Removed express-mongo-sanitize - we use Supabase/PostgreSQL, not MongoDB
 const xss = require('xss-clean');
 const hpp = require('hpp');
 
-// Security headers middleware
+// Extract Supabase domain from URL for CSP
+const getSupabaseDomain = () => {
+  if (!process.env.SUPABASE_URL) return '';
+  try {
+    const url = new URL(process.env.SUPABASE_URL);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return '';
+  }
+};
+
+const supabaseDomain = getSupabaseDomain();
+
+// Security headers middleware with hardened CSP
 const securityHeaders = helmet({
   contentSecurityPolicy: {
     directives: {
@@ -12,21 +25,63 @@ const securityHeaders = helmet({
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
       scriptSrc: ["'self'", 'https://checkout.razorpay.com'],
-      connectSrc: ["'self'", 'https://api.openai.com', process.env.SUPABASE_URL],
+      // Hardened: Only allow OpenAI and Supabase domains
+      connectSrc: [
+        "'self'",
+        'https://api.openai.com',
+        'https://*.openai.com', // Allow OpenAI subdomains
+        supabaseDomain, // Only our Supabase instance
+        'https://*.supabase.co', // Supabase CDN if needed
+      ].filter(Boolean), // Remove empty strings
       frameSrc: ["'self'", 'https://api.razorpay.com'],
+      // Block all other external connections
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      upgradeInsecureRequests: [],
     },
   },
   crossOriginEmbedderPolicy: false,
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 });
 
-// Sanitize data to prevent NoSQL injection
-const sanitizeData = mongoSanitize({
-  replaceWith: '_',
-  onSanitize: ({ req, key }) => {
-    console.warn(`Sanitized potentially malicious input: ${key}`);
-  },
-});
+// PostgreSQL injection prevention (replaces mongoSanitize)
+// Since we use Supabase/PostgreSQL, we sanitize SQL injection patterns
+const sanitizeData = (req, res, next) => {
+  // Remove SQL injection patterns
+  const sqlInjectionPatterns = [
+    /(\%27)|(\')|(\-\-)|(\%23)|(#)/gi, // SQL comment patterns
+    /(\%3B)|(;)/gi, // SQL statement separator
+    /(\%2F)|(\/)/gi, // Path traversal attempts
+    /(\%5C)|(\\)/gi, // Escape sequences
+  ];
+
+  const sanitizeObject = (obj) => {
+    if (!obj || typeof obj !== 'object') return obj;
+    
+    for (const key in obj) {
+      if (typeof obj[key] === 'string') {
+        // Remove SQL injection patterns
+        sqlInjectionPatterns.forEach(pattern => {
+          if (pattern.test(obj[key])) {
+            console.warn(`Sanitized potentially malicious SQL input: ${key}`);
+            obj[key] = obj[key].replace(pattern, '');
+          }
+        });
+        // Trim whitespace
+        obj[key] = obj[key].trim();
+      } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+        sanitizeObject(obj[key]);
+      }
+    }
+  };
+
+  if (req.body) sanitizeObject(req.body);
+  if (req.query) sanitizeObject(req.query);
+  if (req.params) sanitizeObject(req.params);
+
+  next();
+};
 
 // Prevent XSS attacks
 const preventXSS = xss();

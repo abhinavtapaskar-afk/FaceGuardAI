@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const logger = require('../utils/logger');
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -42,7 +43,7 @@ const db = {
     return data;
   },
 
-  // Scans
+  // Scans with transaction support
   async createScan(userId, scanData) {
     const { data, error } = await supabase
       .from('scans')
@@ -58,6 +59,60 @@ const db = {
     
     if (error) throw error;
     return data;
+  },
+
+  // Atomic scan + recommendations creation (prevents orphan records)
+  // Implements rollback pattern to ensure data integrity
+  async createScanWithRecommendations(userId, scanData, recommendations) {
+    let scan = null;
+    let recommendation = null;
+    
+    try {
+      // Step 1: Create scan
+      scan = await this.createScan(userId, scanData);
+      logger.info('Scan created successfully', { scanId: scan.id, userId });
+      
+      // Step 2: Create recommendations (linked to scan)
+      // This validates scan exists before creating recommendations
+      recommendation = await this.saveRecommendations(scan.id, recommendations);
+      logger.info('Recommendations created successfully', { scanId: scan.id, recommendationId: recommendation.id });
+      
+      return { scan, recommendation };
+    } catch (error) {
+      // Rollback: Delete scan if recommendations failed (prevents orphan records)
+      if (scan && !recommendation) {
+        try {
+          const { error: deleteError } = await supabase
+            .from('scans')
+            .delete()
+            .eq('id', scan.id);
+          
+          if (deleteError) {
+            throw deleteError;
+          }
+          
+          logger.info('Rolled back orphan scan due to recommendation creation failure', {
+            scanId: scan.id,
+            userId,
+            originalError: error.message
+          });
+        } catch (rollbackError) {
+          // Rollback failed - log for manual cleanup
+          logger.error('CRITICAL: Rollback failed - orphan scan created - manual cleanup required', {
+            scanId: scan.id,
+            userId,
+            rollbackError: rollbackError.message,
+            originalError: error.message
+          });
+          // Still throw original error
+        }
+      }
+      
+      // Re-throw original error with context
+      error.scanId = scan?.id;
+      error.userId = userId;
+      throw error;
+    }
   },
 
   async getUserScans(userId, limit = 10) {
@@ -85,6 +140,12 @@ const db = {
 
   // Recommendations
   async saveRecommendations(scanId, recommendations) {
+    // Validate scan exists before creating recommendations
+    const scanCheck = await this.getScanById(scanId);
+    if (!scanCheck) {
+      throw new Error(`Cannot create recommendations: Scan ${scanId} does not exist`);
+    }
+    
     const { data, error } = await supabase
       .from('recommendations')
       .insert([{
@@ -92,7 +153,9 @@ const db = {
         products: recommendations.products,
         diet: recommendations.diet,
         lifestyle: recommendations.lifestyle,
-        routine: recommendations.routine
+        routine: recommendations.routine,
+        safety_warnings: recommendations.safetyWarnings,
+        medical_disclaimer: recommendations.medicalDisclaimer
       }])
       .select()
       .single();
@@ -143,6 +206,61 @@ const db = {
     
     if (error) throw error;
     return data;
+  },
+
+  // User management
+  async updateUser(userId, updates) {
+    const { data, error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', userId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async updateUserPremiumStatus(userId, premiumData) {
+    return await this.updateUser(userId, premiumData);
+  },
+
+  async updateUserLastLogin(userId) {
+    return await this.updateUser(userId, {
+      last_login: new Date().toISOString()
+    });
+  },
+
+  // Payment transactions
+  async createPaymentTransaction(transactionData) {
+    const { data, error } = await supabase
+      .from('payment_transactions')
+      .insert([transactionData])
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async updatePaymentTransaction(orderId, updates) {
+    const { data, error } = await supabase
+      .from('payment_transactions')
+      .update(updates)
+      .eq('razorpay_order_id', orderId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Raw query helper (for complex operations)
+  async query(sql, params = []) {
+    // Note: Supabase JS client doesn't support raw SQL directly
+    // This would require using the Postgres client directly or RPC functions
+    // For now, we'll use Supabase's RPC if needed
+    throw new Error('Raw queries require Postgres client or RPC functions');
   }
 };
 

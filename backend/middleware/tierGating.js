@@ -1,4 +1,4 @@
-const { db } = require('../config/database');
+const { db, supabase } = require('../config/database');
 const { AppError } = require('./errorHandler');
 const logger = require('../utils/logger');
 
@@ -24,9 +24,27 @@ const TIER_LIMITS = {
   },
 };
 
-// Get user tier
+// Get user tier with premium_until date validation
 const getUserTier = (user) => {
-  return user.is_premium ? 'premium' : 'free';
+  // Check both is_premium flag AND premium_until date to prevent subscription bypass
+  const isPremiumFlag = user.is_premium === true;
+  const hasValidPremiumDate = user.premium_expires_at && new Date(user.premium_expires_at) > new Date();
+  
+  // User is premium only if BOTH conditions are true
+  if (isPremiumFlag && hasValidPremiumDate) {
+    return 'premium';
+  }
+  
+  // If premium flag is true but date expired, log for investigation
+  if (isPremiumFlag && !hasValidPremiumDate) {
+    logger.warn('Premium user with expired subscription detected', {
+      userId: user.id,
+      premiumExpiresAt: user.premium_expires_at,
+      currentDate: new Date().toISOString()
+    });
+  }
+  
+  return 'free';
 };
 
 // Check if user can scan
@@ -34,8 +52,22 @@ const checkScanLimit = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const user = await db.getUserById(userId);
+    
+    // Validate premium status with date check
     const tier = getUserTier(user);
     const limits = TIER_LIMITS[tier];
+    
+    // Additional security: If user claims premium but date expired, force free tier
+    if (user.is_premium && user.premium_expires_at && new Date(user.premium_expires_at) <= new Date()) {
+      // Premium expired - update user to free tier
+      logger.info('Auto-downgrading expired premium user', { userId });
+      await db.updateUser(userId, { is_premium: false });
+      // Re-fetch user to get updated tier
+      const updatedUser = await db.getUserById(userId);
+      const updatedTier = getUserTier(updatedUser);
+      req.userTier = updatedTier;
+      req.tierLimits = TIER_LIMITS[updatedTier];
+    }
 
     // Reset counters if needed
     await resetCountersIfNeeded(userId, user);
@@ -114,36 +146,90 @@ const resetCountersIfNeeded = async (userId, user) => {
 
 // Increment scan count after successful scan
 const incrementScanCount = async (userId, tier) => {
+  // Fetch current user to get current counts
+  const user = await db.getUserById(userId);
+  
   const updates = {
     last_scan_date: new Date().toISOString().split('T')[0],
   };
 
+  // Increment appropriate counter
   if (tier === 'free') {
-    updates.scan_count_this_week = db.raw('scan_count_this_week + 1');
+    updates.scan_count_this_week = (user.scan_count_this_week || 0) + 1;
   } else if (tier === 'premium') {
-    updates.scan_count_this_day = db.raw('scan_count_this_day + 1');
+    updates.scan_count_this_day = (user.scan_count_this_day || 0) + 1;
   }
 
   await db.updateUser(userId, updates);
   
-  // Update streak
-  await db.query('SELECT update_user_streak($1)', [userId]);
+  // Update streak using Supabase RPC (if function exists) or manual logic
+  try {
+    // Try RPC function first
+    const { error } = await supabase.rpc('update_user_streak', { user_id: userId });
+    if (error) {
+      // Fallback: Manual streak update if RPC doesn't exist
+      logger.warn('RPC update_user_streak not available, using manual update', { error: error.message });
+      await updateStreakManually(userId);
+    }
+  } catch (error) {
+    logger.warn('Streak update failed, using manual fallback', { error: error.message });
+    await updateStreakManually(userId);
+  }
+};
+
+// Manual streak update fallback
+const updateStreakManually = async (userId) => {
+  const user = await db.getUserById(userId);
+  const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  
+  let currentStreak = user.current_streak || 0;
+  let longestStreak = user.longest_streak || 0;
+  
+  // If last scan was yesterday or today, increment streak
+  if (user.last_scan_date === yesterday || user.last_scan_date === today) {
+    currentStreak += 1;
+  } else {
+    // Reset streak
+    currentStreak = 1;
+  }
+  
+  // Update longest streak if needed
+  if (currentStreak > longestStreak) {
+    longestStreak = currentStreak;
+  }
+  
+  await db.updateUser(userId, {
+    current_streak: currentStreak,
+    longest_streak: longestStreak,
+    last_streak_update: today
+  });
 };
 
 // Check if user can access PDF reports
-const requirePremiumForPDF = (req, res, next) => {
-  const tier = getUserTier(req.user);
-  
-  if (!TIER_LIMITS[tier].canAccessPDF) {
-    return res.status(403).json({
+const requirePremiumForPDF = async (req, res, next) => {
+  try {
+    // Re-fetch user to ensure premium_until date is current
+    const user = await db.getUserById(req.user.id);
+    const tier = getUserTier(user);
+    
+    if (!TIER_LIMITS[tier].canAccessPDF) {
+      return res.status(403).json({
+        error: true,
+        message: 'PDF reports are only available for Premium users',
+        feature: 'pdf_report',
+        upgradeRequired: true,
+      });
+    }
+    
+    next();
+  } catch (error) {
+    logger.error('Premium check error:', error);
+    res.status(500).json({
       error: true,
-      message: 'PDF reports are only available for Premium users',
-      feature: 'pdf_report',
-      upgradeRequired: true,
+      message: 'Error verifying premium status'
     });
   }
-  
-  next();
 };
 
 // Check if user can access full leaderboard

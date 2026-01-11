@@ -23,24 +23,58 @@ const validateEmail = (email) => {
   return { valid: true };
 };
 
-// Validate password
+// Validate password - Production-ready security requirements
 const validatePassword = (password) => {
   if (!password || typeof password !== 'string') {
     return { valid: false, message: 'Password is required' };
   }
   
-  if (password.length < 6) {
-    return { valid: false, message: 'Password must be at least 6 characters' };
+  // Minimum 8 characters (industry standard)
+  if (password.length < 8) {
+    return { valid: false, message: 'Password must be at least 8 characters long' };
   }
   
+  // Maximum 128 characters (prevent DoS)
   if (password.length > 128) {
-    return { valid: false, message: 'Password too long' };
+    return { valid: false, message: 'Password too long (maximum 128 characters)' };
+  }
+  
+  // Require at least one number
+  if (!/\d/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one number' };
+  }
+  
+  // Require at least one special character
+  // Special chars: !@#$%^&*()_+-=[]{}|;:,.<>?
+  if (!/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) {
+    return { valid: false, message: 'Password must contain at least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)' };
   }
   
   // Check for common weak passwords
-  const weakPasswords = ['password', '123456', 'qwerty', 'abc123', 'password123'];
+  const weakPasswords = [
+    'password', '123456', 'qwerty', 'abc123', 'password123',
+    'password1', '12345678', '123456789', 'qwerty123', 'admin123',
+    'letmein', 'welcome', 'monkey', '1234567', 'sunshine'
+  ];
   if (weakPasswords.includes(password.toLowerCase())) {
     return { valid: false, message: 'Password too weak. Please choose a stronger password' };
+  }
+  
+  // Check for repeated characters (e.g., "aaaaaa")
+  if (/(.)\1{4,}/.test(password)) {
+    return { valid: false, message: 'Password contains too many repeated characters' };
+  }
+  
+  // Check for sequential characters (e.g., "12345", "abcde")
+  const sequences = ['0123456789', 'abcdefghijklmnopqrstuvwxyz', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
+  const passwordLower = password.toLowerCase();
+  for (const seq of sequences) {
+    for (let i = 0; i <= seq.length - 4; i++) {
+      const substr = seq.substring(i, i + 4);
+      if (passwordLower.includes(substr) || passwordLower.includes(substr.split('').reverse().join(''))) {
+        return { valid: false, message: 'Password contains sequential characters. Please use a more random password' };
+      }
+    }
   }
   
   return { valid: true };

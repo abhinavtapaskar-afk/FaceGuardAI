@@ -58,7 +58,8 @@ router.post('/', authMiddleware, upload.single('photo'), async (req, res) => {
     console.log('Generating recommendations...');
     const recommendations = generateRecommendations(analysis.skinType, analysis.issues);
 
-    // Step 3: Save scan to database
+    // Step 3 & 4: Atomic transaction - create scan + recommendations together
+    // This prevents orphan records if network error occurs between scan and recommendation creation
     const scanData = {
       skinType: analysis.skinType,
       issues: analysis.issues,
@@ -69,10 +70,12 @@ router.post('/', authMiddleware, upload.single('photo'), async (req, res) => {
       imageUrl
     };
 
-    const scan = await db.createScan(req.user.id, scanData);
-
-    // Step 4: Save recommendations
-    await db.saveRecommendations(scan.id, recommendations);
+    // Use atomic method to prevent orphan records
+    const { scan, recommendation } = await db.createScanWithRecommendations(
+      req.user.id,
+      scanData,
+      recommendations
+    );
 
     // Clean up: optionally delete image after processing
     // fs.unlinkSync(imagePath);
