@@ -36,11 +36,13 @@ api.interceptors.response.use(
 export const authAPI = {
   signup: async (data) => {
     const response = await api.post('/auth/signup', data);
+    // Backend returns { success, message, data: { user, token } }
     return response.data;
   },
   
   login: async (data) => {
     const response = await api.post('/auth/login', data);
+    // Backend returns { success, message, data: { user, token } }
     return response.data;
   },
 };
@@ -86,6 +88,15 @@ export const progressAPI = {
     const response = await api.get(`/progress?weeks=${weeks}`);
     return response.data;
   },
+};
+
+// Subscription API
+export const subscriptionAPI = {
+  createOrder: (planType) => api.post('/subscription/create-order', { plan_type: planType }),
+  verifyPayment: (data) => api.post('/subscription/verify-payment', data),
+  getStatus: () => api.get('/subscription/status'),
+  getPlans: () => api.get('/subscription/plans'),
+  cancel: () => api.post('/subscription/cancel'),
 };
 
 export default api;
