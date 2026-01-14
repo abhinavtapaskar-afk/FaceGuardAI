@@ -81,6 +81,11 @@ if (process.env.NODE_ENV !== 'production') {
 app.use(express.static('public'));
 app.use('/uploads', express.static(UPLOAD_DIR));
 
+// Favicon handler (prevent 500 error)
+app.get('/favicon.ico', (req, res) => {
+  res.status(204).end(); // No content
+});
+
 // Apply general rate limiter to all API routes
 app.use('/api', generalLimiter);
 
@@ -102,7 +107,13 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     message: 'FaceGuard AI Server is running',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    env: {
+      nodeEnv: process.env.NODE_ENV || 'development',
+      hasSupabase: !!(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY),
+      hasJWT: !!process.env.JWT_SECRET,
+      mockMode: process.env.MOCK_MODE === 'true'
+    }
   });
 });
 
