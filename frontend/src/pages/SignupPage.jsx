@@ -24,6 +24,9 @@ const SignupPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    console.log('Signup form submitted');
+    
+    // Validation
     if (!formData.name || !formData.email || !formData.password || !formData.confirmPassword) {
       toast.error('Please fill in all fields');
       return;
@@ -46,33 +49,62 @@ const SignupPage = () => {
     }
 
     setLoading(true);
+    console.log('Starting signup process...');
+    
     try {
       // Get user's IP address (optional - for consent tracking)
       let userIP = null;
       try {
+        console.log('Fetching user IP...');
         const ipResponse = await fetch('https://api.ipify.org?format=json');
         const ipData = await ipResponse.json();
         userIP = ipData.ip;
+        console.log('User IP:', userIP);
       } catch (error) {
         console.log('Could not fetch IP:', error);
       }
 
-      const response = await authAPI.signup({
+      const signupData = {
         name: formData.name,
         email: formData.email,
         password: formData.password,
         consent_accepted: true,
         consent_timestamp: new Date().toISOString(),
         consent_ip_address: userIP,
+      };
+
+      console.log('Sending signup request with data:', {
+        ...signupData,
+        password: '***hidden***'
       });
+
+      const response = await authAPI.signup(signupData);
       
-      setAuth(response.data.user, response.data.token);
-      toast.success('Account created successfully!');
-      navigate('/dashboard');
+      console.log('Signup response:', response);
+
+      if (response.success && response.data) {
+        // Store auth data
+        setAuth(response.data.user, response.data.token);
+        
+        toast.success('Account created successfully! 🎉');
+        console.log('Navigating to dashboard...');
+        
+        // Navigate to dashboard
+        navigate('/dashboard');
+      } else {
+        throw new Error(response.message || 'Signup failed');
+      }
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Signup failed');
+      console.error('Signup error:', error);
+      
+      const errorMessage = error.response?.data?.message 
+        || error.message 
+        || 'Signup failed. Please try again.';
+      
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
+      console.log('Signup process completed');
     }
   };
 
@@ -229,7 +261,7 @@ const SignupPage = () => {
             <button
               type="submit"
               disabled={loading || !agreedToTerms}
-              className="btn-primary w-full flex items-center justify-center space-x-2"
+              className="btn-primary w-full flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <>
@@ -248,7 +280,7 @@ const SignupPage = () => {
               Already have an account?{' '}
               <Link
                 to="/login"
-                className="text-primary-600 hover:text-primary-700 font-medium"
+                className="text-primary-600 hover:text-primary-700 font-semibold"
               >
                 Sign in
               </Link>
@@ -256,15 +288,15 @@ const SignupPage = () => {
           </div>
         </div>
 
-        {/* Back to Home */}
-        <div className="mt-6 text-center">
-          <Link
-            to="/"
-            className="text-gray-600 hover:text-gray-900 text-sm"
-          >
-            ← Back to Home
-          </Link>
-        </div>
+        {/* Debug Info (remove in production) */}
+        {import.meta.env.DEV && (
+          <div className="mt-4 p-4 bg-gray-100 rounded-lg text-xs">
+            <p className="font-semibold mb-2">Debug Info:</p>
+            <p>API URL: {import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}</p>
+            <p>Agreed to terms: {agreedToTerms ? 'Yes' : 'No'}</p>
+            <p>Loading: {loading ? 'Yes' : 'No'}</p>
+          </div>
+        )}
       </div>
     </div>
   );
